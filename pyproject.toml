@@ -1,0 +1,11 @@
+[project]
+name = "metube-db"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.13"
+dependencies = [
+    "aiohttp>=3.11.13",
+    "loguru>=0.7.3",
+    "python-socketio>=5.12.1",
+    "yt-dlp>=2025.2.19",
+]

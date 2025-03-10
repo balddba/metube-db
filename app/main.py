@@ -25,7 +25,7 @@ class Config:
         'CUSTOM_DIRS': 'true',
         'CREATE_CUSTOM_DIRS': 'true',
         'DELETE_FILE_ON_TRASHCAN': 'false',
-        'STATE_DIR': '.',
+        'STATE_DIR': '',
         'URL_PREFIX': '',
         'PUBLIC_HOST_URL': 'download/',
         'PUBLIC_HOST_AUDIO_URL': 'audio_download/',
@@ -42,7 +42,7 @@ class Config:
         'HTTPS': 'false',
         'CERTFILE': '',
         'KEYFILE': '',
-        'BASE_DIR': '',
+        'BASE_DIR': '/Users/amyers/PycharmProjects/metube-db',
         'DEFAULT_THEME': 'auto',
         'DOWNLOAD_MODE': 'limited',
         'MAX_CONCURRENT_DOWNLOADS': 3,
@@ -262,6 +262,7 @@ if config.URL_PREFIX != '/':
 
 routes.static(config.URL_PREFIX + 'download/', config.DOWNLOAD_DIR, show_index=config.DOWNLOAD_DIRS_INDEXABLE)
 routes.static(config.URL_PREFIX + 'audio_download/', config.AUDIO_DOWNLOAD_DIR, show_index=config.DOWNLOAD_DIRS_INDEXABLE)
+# routes.static(config.URL_PREFIX, os.path.join(config.BASE_DIR, 'ui/dist/metube'))
 routes.static(config.URL_PREFIX, os.path.join(config.BASE_DIR, 'ui/dist/metube'))
 try:
     app.add_routes(routes)
@@ -283,7 +284,7 @@ async def on_prepare(request, response):
         response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
 
 app.on_response_prepare.append(on_prepare)
- 
+
 def supports_reuse_port():
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)

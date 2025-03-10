@@ -2,11 +2,13 @@ import os
 import yt_dlp
 from collections import OrderedDict
 import shelve
+import sqlite3
 import time
 import asyncio
 import multiprocessing
 import logging
 import re
+from loguru import logger
 
 import yt_dlp.networking.impersonate
 from dl_formats import get_format, get_opts, AUDIO_FORMATS
@@ -174,24 +176,108 @@ class Download:
             await self.notifier.updated(self.info)
 
 class PersistentQueue:
+    # def __init__(self, path):
+    #     pdir = os.path.dirname(path)
+    #     if not os.path.isdir(pdir):
+    #         os.mkdir(pdir)
+    #     with shelve.open(path, 'c'):
+    #         pass
+    #     self.path = path
+    #     self.dict = OrderedDict()
+    #
     def __init__(self, path):
-        pdir = os.path.dirname(path)
-        if not os.path.isdir(pdir):
-            os.mkdir(pdir)
-        with shelve.open(path, 'c'):
-            pass
-        self.path = path
+        self.path=path
+        self.db_path = f"{path}.db"
+        self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
+        self._create_table()
+        # self._import_from_shelve()
         self.dict = OrderedDict()
 
+
+
+    def _create_table(self):
+        with self.conn:
+            self.conn.execute('''CREATE TABLE IF NOT EXISTS queue (
+                id TEXT PRIMARY KEY,
+                title TEXT,
+                url TEXT,
+                quality TEXT,
+                format TEXT,
+                folder TEXT,
+                custom_name_prefix TEXT,
+                status TEXT,
+                size INTEGER,
+                timestamp INTEGER,
+                error TEXT
+            )''')
+
+    def _import_from_shelve(self):
+        if os.path.exists(self.path):
+            with shelve.open(self.path, 'r') as shelf:
+                for key in shelf.keys():
+                    try:
+                        info = shelf[key]
+                        with self.conn:
+                            self.conn.execute("""
+                                INSERT INTO queue (id, title, url, quality, format, folder, custom_name_prefix, status, size, timestamp, error)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                ON CONFLICT(id) DO UPDATE SET
+                                title=excluded.title,
+                                url=excluded.url,
+                                quality=excluded.quality,
+                                format=excluded.format,
+                                folder=excluded.folder,
+                                custom_name_prefix=excluded.custom_name_prefix,
+                                status=excluded.status,
+                                size=excluded.size,
+                                timestamp=excluded.timestamp,
+                                error=excluded.error
+                            """, (info.id, info.title, info.url, info.quality, info.format, info.folder,
+                                  info.custom_name_prefix, info.status, info.size, info.timestamp, info.error))
+                    except KeyError as e:
+                        logger.warning(f"KeyError for key {key}: {e}")
+                    except Exception as e:
+                        logger.error(f"Unexpected error for key {key}: {e}")
+
+    # def load(self):
+    #     for k, v in self.saved_items():
+    #         self.dict[k] = Download(None, None, None, None, None, None, {}, v)
     def load(self):
-        for k, v in self.saved_items():
-            self.dict[k] = Download(None, None, None, None, None, None, {}, v)
+        with self.conn:
+            cursor = self.conn.execute("""
+                SELECT id, title, url, quality, format, folder, custom_name_prefix, status, size, timestamp, error
+                FROM queue ORDER BY timestamp
+            """)
+            for row in cursor.fetchall():
+                id, title, url, quality, format, folder, custom_name_prefix, status, size, timestamp, error = row
+                info = DownloadInfo(
+                    id=id,
+                    title=title,
+                    url=url,
+                    quality=quality,
+                    format=format,
+                    folder=folder,
+                    custom_name_prefix=custom_name_prefix,
+                    error=error
+                )
+                # info = DownloadInfo(*row)
+                self.dict[row[2]] = Download(None, None, None, None, None, None, {}, info)
+
+
+    # def exists(self, key):
+    #     return key in self.dict
+    #
+    # def get(self, key):
+    #     return self.dict[key]
+    #
+    # def items(self):
+    #     return self.dict.items()
 
     def exists(self, key):
         return key in self.dict
 
     def get(self, key):
-        return self.dict[key]
+        return self.dict.get(key)
 
     def items(self):
         return self.dict.items()
@@ -200,17 +286,88 @@ class PersistentQueue:
         with shelve.open(self.path, 'r') as shelf:
             return sorted(shelf.items(), key=lambda item: item[1].timestamp)
 
+    # def put(self, value):
+    #     key = value.info.url
+    #     self.dict[key] = value
+    #     with self.conn:
+    #         self.conn.execute("""
+    #             INSERT INTO queue (id, title, url, quality, format, folder, custom_name_prefix, status, size, timestamp, error)
+    #             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    #             ON CONFLICT(id) DO UPDATE SET
+    #             title=excluded.title, quality=excluded.quality, format=excluded.format,
+    #             folder=excluded.folder, custom_name_prefix=excluded.custom_name_prefix,
+    #             status=excluded.status, size=excluded.size, timestamp=excluded.timestamp,
+    #             error=excluded.error
+    #             """, (value.info.id, value.info.title, value.info.url, value.info.quality, value.info.format,
+    #                   value.info.folder, value.info.custom_name_prefix, value.info.status,
+    #                   value.info.size, value.info.timestamp, value.info.error)
+    #                   )
+    #
+
     def put(self, value):
         key = value.info.url
         self.dict[key] = value
-        with shelve.open(self.path, 'w') as shelf:
-            shelf[key] = value.info
+        with self.conn:
+            self.conn.execute("""
+                INSERT INTO queue (id, title, url, quality, format, folder, custom_name_prefix, status, size, timestamp, error)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                title=excluded.title, quality=excluded.quality, format=excluded.format,
+                folder=excluded.folder, custom_name_prefix=excluded.custom_name_prefix,
+                status=excluded.status, size=excluded.size, timestamp=excluded.timestamp,
+                error=excluded.error
+                """, (value.info.id, value.info.title, value.info.url, value.info.quality, value.info.format,
+                      value.info.folder, value.info.custom_name_prefix, value.info.status,
+                      value.info.size, value.info.timestamp, value.info.error))
 
+
+    # def put(self, value):
+    #     key = value.info.url
+    #     self.dict[key] = value
+    #     with shelve.open(self.path, 'w') as shelf:
+    #         shelf[key] = value.info
+
+    # def delete(self, key):
+    #     if key in self.dict:
+    #         del self.dict[key]
+    #         with shelve.open(self.path, 'w') as shelf:
+    #             shelf.pop(key, None)
+    #
+    # def next(self):
+    #     k, v = next(iter(self.dict.items()))
+    #     return k, v
+    #
+    # def empty(self):
+    #     return not bool(self.dict)
     def delete(self, key):
         if key in self.dict:
             del self.dict[key]
-            with shelve.open(self.path, 'w') as shelf:
-                shelf.pop(key, None)
+            with self.conn:
+                self.conn.execute("DELETE FROM queue WHERE url = ?", (key,))
+
+    def saved_items(self) -> list[tuple[str, DownloadInfo]]:
+        with self.conn:
+            cursor = self.conn.execute("""
+                SELECT id, title, url, quality, format, folder, custom_name_prefix, status, size, timestamp, error
+                FROM queue ORDER BY timestamp
+            """)
+            return [
+                (
+                    url,
+                    DownloadInfo(
+                        id=id,
+                        title=title,
+                        url=url,
+                        quality=quality,
+                        format=format,
+                        folder=folder,
+                        custom_name_prefix=custom_name_prefix,
+                        error=error
+                    )
+                )
+                for id, title, url, quality, format, folder, custom_name_prefix, status, size, timestamp, error in
+                cursor.fetchall()
+            ]
 
     def next(self):
         k, v = next(iter(self.dict.items()))
@@ -233,7 +390,7 @@ class DownloadQueue:
             self.seq_lock = asyncio.Lock()
         elif self.config.DOWNLOAD_MODE == 'limited':
             self.semaphore = asyncio.Semaphore(int(self.config.MAX_CONCURRENT_DOWNLOADS))
-        
+
         self.done.load()
 
     async def __import_queue(self):
