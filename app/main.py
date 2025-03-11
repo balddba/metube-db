@@ -16,9 +16,13 @@ from yt_dlp.version import __version__ as yt_dlp_version
 from pathlib import Path
 log = logging.getLogger('main')
 
+download_directory = os.path.join(str(Path(__file__).parent.parent), "downloads")
+if not Path(download_directory).exists():
+    Path(download_directory).mkdir(exist_ok=True)
+
 class Config:
     _DEFAULTS = {
-        'DOWNLOAD_DIR': '.',
+        'DOWNLOAD_DIR': download_directory,
         'AUDIO_DOWNLOAD_DIR': '%%DOWNLOAD_DIR',
         'TEMP_DIR': '%%DOWNLOAD_DIR',
         'DOWNLOAD_DIRS_INDEXABLE': 'false',
