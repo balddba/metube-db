@@ -1,7 +1,7 @@
 import os
 import yt_dlp
 from collections import OrderedDict
-import shelve
+# import shelve
 import sqlite3
 import time
 import asyncio
@@ -185,19 +185,18 @@ class PersistentQueue:
     #     self.path = path
     #     self.dict = OrderedDict()
     #
-    def __init__(self, path):
-        self.path=path
-        self.db_path = f"{path}.db"
+
+    def __init__(self, path: str):
+        self.table_name = path.split("/")[1]
+        self.db_path = db_path = "metube.db"
         self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
         self._create_table()
-        # self._import_from_shelve()
         self.dict = OrderedDict()
-
 
 
     def _create_table(self):
         with self.conn:
-            self.conn.execute('''CREATE TABLE IF NOT EXISTS queue (
+            sql = f'''CREATE TABLE IF NOT EXISTS {self.table_name} (
                 id TEXT PRIMARY KEY,
                 title TEXT,
                 url TEXT,
@@ -209,35 +208,37 @@ class PersistentQueue:
                 size INTEGER,
                 timestamp INTEGER,
                 error TEXT
-            )''')
+            )'''
+            print(sql)
+            self.conn.execute(sql)
 
-    def _import_from_shelve(self):
-        if os.path.exists(self.path):
-            with shelve.open(self.path, 'r') as shelf:
-                for key in shelf.keys():
-                    try:
-                        info = shelf[key]
-                        with self.conn:
-                            self.conn.execute("""
-                                INSERT INTO queue (id, title, url, quality, format, folder, custom_name_prefix, status, size, timestamp, error)
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                                ON CONFLICT(id) DO UPDATE SET
-                                title=excluded.title,
-                                url=excluded.url,
-                                quality=excluded.quality,
-                                format=excluded.format,
-                                folder=excluded.folder,
-                                custom_name_prefix=excluded.custom_name_prefix,
-                                status=excluded.status,
-                                size=excluded.size,
-                                timestamp=excluded.timestamp,
-                                error=excluded.error
-                            """, (info.id, info.title, info.url, info.quality, info.format, info.folder,
-                                  info.custom_name_prefix, info.status, info.size, info.timestamp, info.error))
-                    except KeyError as e:
-                        logger.warning(f"KeyError for key {key}: {e}")
-                    except Exception as e:
-                        logger.error(f"Unexpected error for key {key}: {e}")
+    # def _import_from_shelve(self):
+    #     if os.path.exists(self.path):
+    #         with shelve.open(self.path, 'r') as shelf:
+    #             for key in shelf.keys():
+    #                 try:
+    #                     info = shelf[key]
+    #                     with self.conn:
+    #                         self.conn.execute("""
+    #                             INSERT INTO queue (id, title, url, quality, format, folder, custom_name_prefix, status, size, timestamp, error)
+    #                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    #                             ON CONFLICT(id) DO UPDATE SET
+    #                             title=excluded.title,
+    #                             url=excluded.url,
+    #                             quality=excluded.quality,
+    #                             format=excluded.format,
+    #                             folder=excluded.folder,
+    #                             custom_name_prefix=excluded.custom_name_prefix,
+    #                             status=excluded.status,
+    #                             size=excluded.size,
+    #                             timestamp=excluded.timestamp,
+    #                             error=excluded.error
+    #                         """, (info.id, info.title, info.url, info.quality, info.format, info.folder,
+    #                               info.custom_name_prefix, info.status, info.size, info.timestamp, info.error))
+    #                 except KeyError as e:
+    #                     logger.warning(f"KeyError for key {key}: {e}")
+    #                 except Exception as e:
+    #                     logger.error(f"Unexpected error for key {key}: {e}")
 
     # def load(self):
     #     for k, v in self.saved_items():
@@ -283,8 +284,27 @@ class PersistentQueue:
         return self.dict.items()
 
     def saved_items(self):
-        with shelve.open(self.path, 'r') as shelf:
-            return sorted(shelf.items(), key=lambda item: item[1].timestamp)
+        with self.conn:
+            cursor = self.conn.execute("""
+                SELECT id, title, url, quality, format, folder, custom_name_prefix, status, size, timestamp, error
+                FROM queue ORDER BY timestamp
+            """)
+            return [
+                (
+                    row['url'],
+                    DownloadInfo(
+                        id=row['id'],
+                        title=row['title'],
+                        url=row['url'],
+                        quality=row['quality'],
+                        format=row['format'],
+                        folder=row['folder'],
+                        custom_name_prefix=row['custom_name_prefix'],
+                        error=row['error']
+                    )
+                )
+                for row in cursor.fetchall()
+            ]
 
     # def put(self, value):
     #     key = value.info.url

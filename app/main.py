@@ -13,7 +13,7 @@ import pathlib
 
 from ytdl import DownloadQueueNotifier, DownloadQueue
 from yt_dlp.version import __version__ as yt_dlp_version
-
+from pathlib import Path
 log = logging.getLogger('main')
 
 class Config:
@@ -25,7 +25,7 @@ class Config:
         'CUSTOM_DIRS': 'true',
         'CREATE_CUSTOM_DIRS': 'true',
         'DELETE_FILE_ON_TRASHCAN': 'false',
-        'STATE_DIR': '',
+        'STATE_DIR': '.metube',
         'URL_PREFIX': '',
         'PUBLIC_HOST_URL': 'download/',
         'PUBLIC_HOST_AUDIO_URL': 'audio_download/',
@@ -42,7 +42,7 @@ class Config:
         'HTTPS': 'false',
         'CERTFILE': '',
         'KEYFILE': '',
-        'BASE_DIR': '/Users/amyers/PycharmProjects/metube-db',
+        'BASE_DIR': str(Path(__file__).parent.parent),
         'DEFAULT_THEME': 'auto',
         'DOWNLOAD_MODE': 'limited',
         'MAX_CONCURRENT_DOWNLOADS': 3,
