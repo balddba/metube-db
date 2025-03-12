@@ -245,9 +245,9 @@ class PersistentQueue:
     #         self.dict[k] = Download(None, None, None, None, None, None, {}, v)
     def load(self):
         with self.conn:
-            cursor = self.conn.execute("""
+            cursor = self.conn.execute(f"""
                 SELECT id, title, url, quality, format, folder, custom_name_prefix, status, size, timestamp, error
-                FROM queue ORDER BY timestamp
+                FROM {self.table_name} ORDER BY timestamp
             """)
             for row in cursor.fetchall():
                 id, title, url, quality, format, folder, custom_name_prefix, status, size, timestamp, error = row
@@ -285,9 +285,9 @@ class PersistentQueue:
 
     def saved_items(self):
         with self.conn:
-            cursor = self.conn.execute("""
+            cursor = self.conn.execute(f"""
                 SELECT id, title, url, quality, format, folder, custom_name_prefix, status, size, timestamp, error
-                FROM queue ORDER BY timestamp
+                FROM {self.table_name} ORDER BY timestamp
             """)
             return [
                 (
@@ -328,8 +328,8 @@ class PersistentQueue:
         key = value.info.url
         self.dict[key] = value
         with self.conn:
-            self.conn.execute("""
-                INSERT INTO queue (id, title, url, quality, format, folder, custom_name_prefix, status, size, timestamp, error)
+            self.conn.execute(f"""
+                INSERT INTO {self.table_name} (id, title, url, quality, format, folder, custom_name_prefix, status, size, timestamp, error)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                 title=excluded.title, quality=excluded.quality, format=excluded.format,
@@ -363,13 +363,13 @@ class PersistentQueue:
         if key in self.dict:
             del self.dict[key]
             with self.conn:
-                self.conn.execute("DELETE FROM queue WHERE url = ?", (key,))
+                self.conn.execute(f"""DELETE FROM {self.table_name} WHERE url = ?""", (key,))
 
     def saved_items(self) -> list[tuple[str, DownloadInfo]]:
         with self.conn:
-            cursor = self.conn.execute("""
+            cursor = self.conn.execute(f"""
                 SELECT id, title, url, quality, format, folder, custom_name_prefix, status, size, timestamp, error
-                FROM queue ORDER BY timestamp
+                FROM {self.table_name} ORDER BY timestamp
             """)
             return [
                 (
